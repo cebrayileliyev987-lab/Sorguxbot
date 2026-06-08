@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# CK SORGUBOT ULTIMATE PRO v8.0 - DOCKER EDITION
+# CK SORGUBOT ULTIMATE PRO v9.0 - WEBHOOK EDITION
 # @rinexdestek | @cksorgupanel
 
 import os
 import sys
-import asyncio
-import aiohttp
 import json
 import sqlite3
 import random
 import logging
+import asyncio
+import aiohttp
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
+from flask import Flask, request, jsonify
 
 # ==================== TOKEN KONTROL ====================
 TOKEN = os.environ.get("BOT_TOKEN", "")
@@ -28,178 +29,55 @@ SUPPORT_LINK = "https://t.me/rinexdestek"
 DB_FILE = "bot_data.db"
 
 # Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram Import
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember, Bot
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.constants import ParseMode
+# Flask app
+app = Flask(__name__)
+
+# Telegram Bot (PTB v13.15 - webhook uyumlu)
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Dispatcher, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
+from telegram.utils.request import Request
+
+bot = Bot(token=TOKEN)
+dispatcher = Dispatcher(bot, None, workers=4, use_context=True)
 
 # ==================== API URL'LER ====================
 API_URLS = {
-    "tcgsm": {
-        "url": "https://arastir.vip/api/tcgsm.php",
-        "params": {"tc": "{value}"},
-        "name": "🔍 TC'den GSM",
-        "example": "12345678901",
-        "method": "GET"
-    },
-    "sulale": {
-        "url": "https://arastir.vip/api/sulale.php",
-        "params": {"tc": "{value}"},
-        "name": "👨‍👩‍👧‍👦 Sülale",
-        "example": "12345678901",
-        "method": "GET"
-    },
-    "gsmtc": {
-        "url": "https://arastir.vip/api/gsmtc.php",
-        "params": {"gsm": "{value}"},
-        "name": "📞 GSM'den TC",
-        "example": "5551234567",
-        "method": "GET"
-    },
-    "adsoyad": {
-        "url": "https://arastir.vip/api/adsoyad.php",
-        "params": {"adi": "{adi}", "soyadi": "{soyadi}"},
-        "name": "👤 Ad Soyad",
-        "example": "Mehmet Yılmaz",
-        "multi_param": True,
-        "method": "GET"
-    },
-    "adres": {
-        "url": "https://arastir.vip/api/adres.php",
-        "params": {"tc": "{value}"},
-        "name": "🏠 Adres",
-        "example": "12345678901",
-        "method": "GET"
-    },
-    "isyeri": {
-        "url": "https://arastir.vip/api/isyeri.php",
-        "params": {"tc": "{value}"},
-        "name": "🏢 İş Yeri",
-        "example": "12345678901",
-        "method": "GET"
-    },
-    "tc": {
-        "url": "https://arastir.vip/api/tc.php",
-        "params": {"tc": "{value}"},
-        "name": "🆔 TC Sorgu",
-        "example": "12345678901",
-        "method": "GET"
-    },
-    "operator": {
-        "url": "https://apiservices.alwaysdata.net/apiservices/gncloperator.php",
-        "params": {"numara": "{value}"},
-        "name": "📡 Operatör",
-        "example": "5315312472",
-        "method": "GET"
-    },
-    "iban": {
-        "url": "https://rinexibansorguapi.rf.gd/api.php",
-        "params": {"iban": "{value}"},
-        "name": "🏦 IBAN",
-        "example": "TR280006256953335759003718",
-        "method": "GET"
-    },
-    "plaka": {
-        "url": "https://rinexplakasorguapi.gt.tc/api/plaka.php",
-        "params": {"endpoint": "ara", "q": "{value}"},
-        "name": "🚗 Plaka",
-        "example": "34KG4978",
-        "method": "GET"
-    },
-    "papara_id": {
-        "url": "http://rinexpaparasorguapi.rf.gd/api/papara.php",
-        "params": {"id": "{value}"},
-        "name": "💰 Papara ID",
-        "example": "1354693996",
-        "method": "GET"
-    },
-    "papara_isim": {
-        "url": "http://rinexpaparasorguapi.rf.gd/api/papara.php",
-        "params": {"name": "{value}"},
-        "name": "📛 Papara İsim",
-        "example": "ÖZCAN",
-        "method": "GET"
-    },
-    "eczane": {
-        "url": "https://eczanedataf3.onrender.com/f3system/api/eczane",
-        "params": {"il": "{value}"},
-        "name": "💊 Eczane",
-        "example": "İstanbul",
-        "method": "GET"
-    },
-    "vergi_ad": {
-        "url": "https://serino.onrender.com/vergi",
-        "params": {"ad": "{value}"},
-        "name": "📑 Vergi (Ad)",
-        "example": "ahmet",
-        "method": "GET"
-    },
-    "vergi_no": {
-        "url": "https://serino.onrender.com/vergi",
-        "params": {"no": "{value}"},
-        "name": "📑 Vergi No",
-        "example": "1234567890",
-        "method": "GET"
-    }
+    "tcgsm": {"url": "https://arastir.vip/api/tcgsm.php", "params": {"tc": "{value}"}, "name": "🔍 TC'den GSM", "example": "12345678901"},
+    "sulale": {"url": "https://arastir.vip/api/sulale.php", "params": {"tc": "{value}"}, "name": "👨‍👩‍👧‍👦 Sülale", "example": "12345678901"},
+    "gsmtc": {"url": "https://arastir.vip/api/gsmtc.php", "params": {"gsm": "{value}"}, "name": "📞 GSM'den TC", "example": "5551234567"},
+    "adsoyad": {"url": "https://arastir.vip/api/adsoyad.php", "params": {"adi": "{adi}", "soyadi": "{soyadi}"}, "name": "👤 Ad Soyad", "example": "Mehmet Yılmaz", "multi_param": True},
+    "adres": {"url": "https://arastir.vip/api/adres.php", "params": {"tc": "{value}"}, "name": "🏠 Adres", "example": "12345678901"},
+    "isyeri": {"url": "https://arastir.vip/api/isyeri.php", "params": {"tc": "{value}"}, "name": "🏢 İş Yeri", "example": "12345678901"},
+    "tc": {"url": "https://arastir.vip/api/tc.php", "params": {"tc": "{value}"}, "name": "🆔 TC Sorgu", "example": "12345678901"},
+    "operator": {"url": "https://apiservices.alwaysdata.net/apiservices/gncloperator.php", "params": {"numara": "{value}"}, "name": "📡 Operatör", "example": "5315312472"},
+    "iban": {"url": "https://rinexibansorguapi.rf.gd/api.php", "params": {"iban": "{value}"}, "name": "🏦 IBAN", "example": "TR280006256953335759003718"},
+    "plaka": {"url": "https://rinexplakasorguapi.gt.tc/api/plaka.php", "params": {"endpoint": "ara", "q": "{value}"}, "name": "🚗 Plaka", "example": "34KG4978"},
+    "papara_id": {"url": "http://rinexpaparasorguapi.rf.gd/api/papara.php", "params": {"id": "{value}"}, "name": "💰 Papara ID", "example": "1354693996"},
+    "papara_isim": {"url": "http://rinexpaparasorguapi.rf.gd/api/papara.php", "params": {"name": "{value}"}, "name": "📛 Papara İsim", "example": "ÖZCAN"},
+    "eczane": {"url": "https://eczanedataf3.onrender.com/f3system/api/eczane", "params": {"il": "{value}"}, "name": "💊 Eczane", "example": "İstanbul"},
+    "vergi_ad": {"url": "https://serino.onrender.com/vergi", "params": {"ad": "{value}"}, "name": "📑 Vergi (Ad)", "example": "ahmet"},
+    "vergi_no": {"url": "https://serino.onrender.com/vergi", "params": {"no": "{value}"}, "name": "📑 Vergi No", "example": "1234567890"}
 }
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-]
+USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"]
 
 # ==================== VERİTABANI ====================
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        first_name TEXT,
-        join_date TEXT,
-        total_queries INTEGER DEFAULT 0,
-        is_banned INTEGER DEFAULT 0,
-        is_admin INTEGER DEFAULT 0,
-        frozen INTEGER DEFAULT 0
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS query_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        query_type TEXT,
-        query_value TEXT,
-        query_time TEXT,
-        result_count INTEGER DEFAULT 0
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        platform TEXT,
-        content TEXT,
-        status TEXT DEFAULT 'beklemede',
-        report_time TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, join_date TEXT, total_queries INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, is_admin INTEGER DEFAULT 0, frozen INTEGER DEFAULT 0)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS query_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, query_type TEXT, query_value TEXT, query_time TEXT, result_count INTEGER DEFAULT 0)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, platform TEXT, content TEXT, status TEXT DEFAULT 'beklemede', report_time TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
     
     for admin_id in ADMIN_IDS:
-        c.execute("INSERT OR IGNORE INTO users (user_id, join_date, is_admin) VALUES (?, ?, ?)",
-                  (admin_id, datetime.now().isoformat(), 1))
+        c.execute("INSERT OR IGNORE INTO users (user_id, join_date, is_admin) VALUES (?, ?, ?)", (admin_id, datetime.now().isoformat(), 1))
     
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('maintenance', 'false')")
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('total_api_calls', '0')")
-    
     conn.commit()
     conn.close()
     print("✅ Veritabanı hazır")
@@ -210,8 +88,7 @@ def get_user(user_id):
     c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     user = c.fetchone()
     if not user:
-        c.execute("INSERT INTO users (user_id, join_date) VALUES (?, ?)",
-                  (user_id, datetime.now().isoformat()))
+        c.execute("INSERT INTO users (user_id, join_date) VALUES (?, ?)", (user_id, datetime.now().isoformat()))
         conn.commit()
         c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = c.fetchone()
@@ -250,20 +127,6 @@ def get_maintenance():
     conn.close()
     return r and r[0] == 'true'
 
-def set_maintenance(status):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE settings SET value = ? WHERE key = 'maintenance'", ('true' if status else 'false'))
-    conn.commit()
-    conn.close()
-
-def increment_api_calls():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE settings SET value = CAST(value AS INTEGER) + 1 WHERE key = 'total_api_calls'")
-    conn.commit()
-    conn.close()
-
 def get_api_calls():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -271,6 +134,13 @@ def get_api_calls():
     r = c.fetchone()
     conn.close()
     return int(r[0]) if r else 0
+
+def increment_api_calls():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE settings SET value = CAST(value AS INTEGER) + 1 WHERE key = 'total_api_calls'")
+    conn.commit()
+    conn.close()
 
 def get_all_users():
     conn = sqlite3.connect(DB_FILE)
@@ -341,17 +211,6 @@ def add_report(user_id, platform, content):
     conn.close()
     return report_id
 
-def get_reports(status=None):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    if status:
-        c.execute("SELECT id, user_id, platform, content, status, report_time FROM reports WHERE status = ? ORDER BY id DESC", (status,))
-    else:
-        c.execute("SELECT id, user_id, platform, content, status, report_time FROM reports ORDER BY id DESC")
-    reports = c.fetchall()
-    conn.close()
-    return reports
-
 def update_report_status(report_id, status):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -364,30 +223,29 @@ async def api_request(url: str, params: dict = None) -> Optional[Dict]:
     try:
         headers = {"User-Agent": random.choice(USER_AGENTS), "Accept": "application/json"}
         connector = aiohttp.TCPConnector(ssl=False)
-        
         async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(url, params=params, headers=headers, timeout=25) as resp:
+            async with session.get(url, params=params, headers=headers, timeout=20) as resp:
                 text = await resp.text()
                 increment_api_calls()
                 try:
                     return json.loads(text)
                 except:
-                    return {"sonuc": text[:1000] if text else "Boş yanıt"}
+                    return {"sonuc": text[:500] if text else "Boş yanıt"}
     except Exception as e:
         logger.error(f"API hatası: {e}")
         return {"hata": str(e)}
 
 async def execute_query(query_type: str, value: str) -> Tuple[str, int, bool]:
     if query_type not in API_URLS:
-        return "❌ Geçersiz sorgu tipi", 0, False
+        return "❌ Geçersiz sorgu", 0, False
     
     api_info = API_URLS[query_type]
     
     if api_info.get("multi_param"):
         parts = value.split()
-        if query_type == "adsoyad" and len(parts) < 2:
+        if len(parts) < 2:
             return "❌ Format: Ad Soyad\nÖrnek: Mehmet Yılmaz", 0, False
-        params = {"adi": parts[0], "soyadi": " ".join(parts[1:])} if query_type == "adsoyad" else {k: value for k in api_info["params"]}
+        params = {"adi": parts[0], "soyadi": " ".join(parts[1:])}
     else:
         params = {}
         for key, template in api_info["params"].items():
@@ -396,11 +254,7 @@ async def execute_query(query_type: str, value: str) -> Tuple[str, int, bool]:
     data = await api_request(api_info["url"], params)
     
     if data and "hata" not in data:
-        result_text = f"📋 **{api_info['name']}**\n━━━━━━━━━━━━━━━━━━━━━━\n"
-        result_text += f"🔍 **Aranan:** `{value}`\n"
-        result_text += f"⏰ **Tarih:** {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n"
-        result_text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
+        result_text = f"📋 **{api_info['name']}**\n━━━━━━━━━━━━━━━━━━━━━━\n🔍 **Aranan:** `{value}`\n⏰ **Tarih:** {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
         result_count = 0
         
         if isinstance(data, dict):
@@ -435,22 +289,11 @@ async def execute_query(query_type: str, value: str) -> Tuple[str, int, bool]:
             result_text += f"📄 **SONUÇ:**\n`{str(data)[:500]}`\n"
             result_count = 1
         
-        result_text += "\n━━━━━━━━━━━━━━━━━━━━━━\n"
-        result_text += f"💳 **API Satın Al:** @rinexdestek\n"
-        result_text += f"👑 **Destek:** @rinexdestek | 📢 **Kanal:** @cksorgupanel"
-        
+        result_text += "\n━━━━━━━━━━━━━━━━━━━━━━\n👑 **Destek:** @rinexdestek | 📢 **Kanal:** @cksorgupanel"
         return result_text, result_count, True
     else:
         hata = data.get("hata", "Bağlantı hatası") if data else "API yanıt vermiyor"
-        return f"❌ **HATA:** {hata}\n\nLütfen daha sonra tekrar deneyin.", 0, False
-
-# ==================== KANAL KONTROLÜ ====================
-async def is_member(user_id, context):
-    try:
-        cm = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
-        return cm.status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
-    except:
-        return True
+        return f"❌ **HATA:** {hata}", 0, False
 
 # ==================== MENÜLER ====================
 def main_menu(is_admin_user=False):
@@ -461,7 +304,7 @@ def main_menu(is_admin_user=False):
         [InlineKeyboardButton("👤 Ad Soyad", callback_data="query_adsoyad")],
         [InlineKeyboardButton("🏠 Adres", callback_data="query_adres")],
         [InlineKeyboardButton("🏢 İş Yeri", callback_data="query_isyeri")],
-        [InlineKeyboardButton("🆔 TC Sorgu", callback_data="query_tc")],
+        [InlineKeyboardButton("🆔 TC", callback_data="query_tc")],
         [InlineKeyboardButton("📡 Operatör", callback_data="query_operator")],
         [InlineKeyboardButton("🏦 IBAN", callback_data="query_iban")],
         [InlineKeyboardButton("🚗 Plaka", callback_data="query_plaka")],
@@ -472,13 +315,11 @@ def main_menu(is_admin_user=False):
         [InlineKeyboardButton("ℹ️ Bilgi", callback_data="menu_info")],
         [InlineKeyboardButton("⚠️ İhbar", callback_data="menu_report")],
         [InlineKeyboardButton("🤖 Bot Klonla", callback_data="menu_clone")],
-        [InlineKeyboardButton("📢 Kanal", url=CHANNEL_LINK),
-         InlineKeyboardButton("💬 Destek", url=SUPPORT_LINK)]
+        [InlineKeyboardButton("📢 Kanal", url="https://t.me/cksorgupanel"),
+         InlineKeyboardButton("💬 Destek", url="https://t.me/rinexdestek")]
     ]
-    
     if is_admin_user:
         buttons.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")])
-    
     return InlineKeyboardMarkup(buttons)
 
 def result_menu():
@@ -497,208 +338,104 @@ def admin_panel_menu():
          InlineKeyboardButton("👑 Admin Yönetimi", callback_data="admin_manage")],
         [InlineKeyboardButton("⚠️ İhbarlar", callback_data="admin_reports"),
          InlineKeyboardButton("🔧 Bakım Modu", callback_data="admin_maintenance")],
-        [InlineKeyboardButton("👥 Tüm Kullanıcılar", callback_data="admin_users")],
         [InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu")]
     ])
 
-# ==================== KOMUTLAR ====================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== KOMUT HANDLERLERI ====================
+def start(update, context):
     user = update.effective_user
     user_id = user.id
     
     if get_maintenance() and not is_admin(user_id):
-        return await update.message.reply_text("🔧 **Bot bakım modundadır!**")
+        update.message.reply_text("🔧 Bot bakım modundadır!")
+        return
     
     if is_banned(user_id):
-        return await update.message.reply_text("🚫 **Hesabınız banlanmıştır!**\n\nYetkili: @rinexdestek")
-    
-    if is_frozen(user_id) and not is_admin(user_id):
-        return await update.message.reply_text("❄️ **Hesabınız dondurulmuştur!**\n\nYetkili: @rinexdestek")
+        update.message.reply_text("🚫 Hesabınız banlanmıştır! @rinexdestek")
+        return
     
     get_user(user_id)
     
-    if not await is_member(user_id, context):
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Kanala Katıl", url=f"https://t.me/{REQUIRED_CHANNEL[1:]}")],
-            [InlineKeyboardButton("✅ Katıldım", callback_data="check_join")]
-        ])
-        return await update.message.reply_text(
-            f"🔒 **Kanal Zorunluluğu**\n\nBotu kullanmak için {REQUIRED_CHANNEL} kanalına katılmalısınız!",
-            reply_markup=kb
-        )
-    
-    await update.message.reply_text(
+    update.message.reply_text(
         f"✨ **Hoşgeldin {user.first_name}!** ✨\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🔰 **CK SORGUBOT ULTIMATE PRO v8.0**\n\n"
-        f"📌 Aşağıdaki butonlardan sorgu tipini seç:\n"
-        f"🎁 **Tüm sorgular ÜCRETSİZDİR!**\n\n"
-        f"👑 **Destek:** @rinexdestek\n"
-        f"📢 **Kanal:** @cksorgupanel",
-        parse_mode=ParseMode.MARKDOWN,
+        f"🔰 **CK SORGUBOT v9.0**\n\n📌 Sorgu tipini seç:\n🎁 **Tüm sorgular ÜCRETSİZ!**\n\n👑 @rinexdestek | 📢 @cksorgupanel",
+        parse_mode="Markdown",
         reply_markup=main_menu(is_admin(user_id))
     )
 
-async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    user = update.effective_user
-    
-    if await is_member(user.id, context):
-        await q.message.delete()
-        await q.message.reply_text(
-            "✅ **Hoşgeldin!**\nArtık botu kullanabilirsin.",
-            reply_markup=main_menu(is_admin(user.id))
-        )
-    else:
-        await q.answer("❌ Hala kanala katılmadınız!", show_alert=True)
-
-async def menu_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    user = get_user(q.from_user.id)
-    api_calls = get_api_calls()
-    
-    text = (
-        f"📊 **İstatistikleriniz**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"👤 **ID:** `{q.from_user.id}`\n"
-        f"🔍 **Toplam Sorgu:** `{user[4] if user else 0}`\n"
-        f"📅 **Katılım:** `{user[3][:16] if user else '?'}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌍 **Genel**\n"
-        f"📡 **Toplam API:** `{api_calls}`\n"
-        f"🎁 **Tüm sorgular ÜCRETSİZ!**"
-    )
-    await q.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=result_menu())
-
-async def menu_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    
-    text = (
-        f"ℹ️ **Bot Bilgileri**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🤖 **Bot:** CK Sorgu Bot Ultimate\n"
-        f"📌 **Sürüm:** 8.0 Pro (Docker)\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"**📱 Sorgu Tipleri (15):**\n"
-        f"• TC'den GSM | Sülale | TC\n"
-        f"• GSM'den TC | Operatör\n"
-        f"• Ad Soyad | Adres | İş Yeri\n"
-        f"• IBAN | Plaka | Papara\n"
-        f"• Eczane | Vergi\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎁 **Tüm sorgular ÜCRETSİZDİR!**\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👑 **Destek:** @rinexdestek\n"
-        f"📢 **Kanal:** @cksorgupanel"
-    )
-    
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📞 Destek", url=SUPPORT_LINK)],
-        [InlineKeyboardButton("📢 Kanal", url=CHANNEL_LINK)],
-        [InlineKeyboardButton("🔙 Geri", callback_data="main_menu")]
-    ])
-    await q.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
-
-async def menu_clone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    context.user_data["await_clone"] = True
-    await q.message.edit_text(
-        "🤖 **Bot Klonlama**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "BotFather'dan aldığın **bot tokenini** gönder.\n\n"
-        "**Token örneği:**\n`1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`\n\n"
-        "❌ İptal: `/cancel`",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-async def menu_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📱 TikTok", callback_data="report_tiktok"),
-         InlineKeyboardButton("📸 Instagram", callback_data="report_instagram")],
-        [InlineKeyboardButton("📺 YouTube", callback_data="report_youtube"),
-         InlineKeyboardButton("✈️ Telegram", callback_data="report_telegram")],
-        [InlineKeyboardButton("🌐 Diğer", callback_data="report_other")],
-        [InlineKeyboardButton("🔙 İptal", callback_data="main_menu")]
-    ])
-    await q.message.edit_text(
-        "⚠️ **İhbar Bildir**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Hangi platformda ihbar yapmak istiyorsunuz?",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb
-    )
-
-# ==================== CALLBACK HANDLER ====================
-async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    user_id = q.from_user.id
-    data = q.data
-    
-    if get_maintenance() and not is_admin(user_id) and data not in ["check_join", "main_menu"]:
-        await q.message.edit_text("🔧 Bakım modu!", reply_markup=main_menu(False))
-        return
-    
-    if data == "check_join":
-        return await check_join(update, context)
-    
-    if data == "new_query":
-        await q.message.edit_text("🔄 **Yeni Sorgu**", reply_markup=main_menu(is_admin(user_id)))
-        return
+def callback_handler(update, context):
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
     
     if data == "main_menu":
-        await q.message.edit_text("🏠 **Ana Menü**", reply_markup=main_menu(is_admin(user_id)))
+        query.edit_message_text("🏠 Ana Menü", reply_markup=main_menu(is_admin(user_id)))
         return
     
     if data == "menu_stats":
-        return await menu_stats(update, context)
+        user = get_user(user_id)
+        api_calls = get_api_calls()
+        query.edit_message_text(
+            f"📊 **İstatistikleriniz**\n━━━━━━━━━━━━━━━━━━━━━━\n\n👤 ID: `{user_id}`\n🔍 Toplam Sorgu: `{user[4] if user else 0}`\n📡 Toplam API: `{api_calls}`\n🎁 Tüm sorgular ÜCRETSİZ!",
+            parse_mode="Markdown", reply_markup=result_menu()
+        )
+        return
     
     if data == "menu_info":
-        return await menu_info(update, context)
-    
-    if data == "menu_clone":
-        return await menu_clone(update, context)
-    
-    if data == "menu_report":
-        return await menu_report(update, context)
+        query.edit_message_text(
+            f"ℹ️ **Bot Bilgileri**\n━━━━━━━━━━━━━━━━━━━━━━\n\n🤖 CK Sorgu Bot v9.0\n📱 15 farklı sorgu tipi\n🎁 Tüm sorgular ÜCRETSİZ!\n\n👑 @rinexdestek | 📢 @cksorgupanel",
+            parse_mode="Markdown", 
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Geri", callback_data="main_menu")]])
+        )
+        return
     
     if data.startswith("query_"):
         query_type = data.replace("query_", "")
         if query_type in API_URLS:
             context.user_data["query_type"] = query_type
             context.user_data["await_query"] = True
-            api_info = API_URLS[query_type]
-            await q.message.edit_text(
-                f"📝 **{api_info['name']}**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"📌 **Örnek:** `{api_info['example']}`\n\n"
-                f"💬 **Değeri gönderin:**\n\n"
-                f"❌ İptal: `/cancel`",
-                parse_mode=ParseMode.MARKDOWN
+            query.edit_message_text(
+                f"📝 **{API_URLS[query_type]['name']}**\n━━━━━━━━━━━━━━━━━━━━━━\n\n📌 Örnek: `{API_URLS[query_type]['example']}`\n\n💬 Değeri gönderin:\n\n❌ İptal: /cancel",
+                parse_mode="Markdown"
             )
         return
     
-    if data.startswith("report_"):
-        platform = data[7:]
-        context.user_data["report_platform"] = platform
-        context.user_data["await_report"] = True
-        await q.message.edit_text(
-            f"⚠️ **{platform.upper()} İhbar**\n\nİçerik linkini veya kullanıcı adını gönder:",
-            parse_mode=ParseMode.MARKDOWN
+    if data == "menu_clone":
+        context.user_data["await_clone"] = True
+        query.edit_message_text(
+            "🤖 **Bot Klonlama**\n━━━━━━━━━━━━━━━━━━━━━━\n\nBotFather'dan aldığın bot tokenini gönder.\n\nÖrnek: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`\n\n❌ İptal: /cancel",
+            parse_mode="Markdown"
         )
         return
     
+    if data == "menu_report":
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📱 TikTok", callback_data="report_tiktok"),
+             InlineKeyboardButton("📸 Instagram", callback_data="report_instagram")],
+            [InlineKeyboardButton("📺 YouTube", callback_data="report_youtube"),
+             InlineKeyboardButton("✈️ Telegram", callback_data="report_telegram")],
+            [InlineKeyboardButton("🔙 İptal", callback_data="main_menu")]
+        ])
+        query.edit_message_text("⚠️ **İhbar Bildir**\nHangi platform?", parse_mode="Markdown", reply_markup=kb)
+        return
+    
+    if data.startswith("report_"):
+        context.user_data["report_platform"] = data[7:]
+        context.user_data["await_report"] = True
+        query.edit_message_text(f"⚠️ İçerik linkini veya kullanıcı adını gönder:")
+        return
+    
+    if data == "new_query":
+        query.edit_message_text("🔄 Yeni Sorgu", reply_markup=main_menu(is_admin(user_id)))
+        return
+    
+    # Admin panel
     if not is_admin(user_id):
         return
     
     if data == "admin_panel":
-        await q.message.edit_text("👑 **Admin Paneli**", reply_markup=admin_panel_menu())
-        return
-    
-    if data == "admin_duyuru":
-        context.user_data["await_announcement"] = True
-        await q.message.edit_text("📢 **Duyuru**\n\nDuyuru metnini yazın:")
+        query.edit_message_text("👑 Admin Paneli", reply_markup=admin_panel_menu())
         return
     
     if data == "admin_stats":
@@ -712,280 +449,237 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         banned = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM users WHERE frozen = 1")
         frozen = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM reports WHERE status = 'beklemede'")
-        pending = c.fetchone()[0]
         api_calls = get_api_calls()
         conn.close()
-        
-        text = f"📊 **İstatistikler**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        text += f"👥 Kullanıcı: {total_users}\n"
-        text += f"🔍 Toplam Sorgu: {total_queries}\n"
-        text += f"📡 API Çağrısı: {api_calls}\n"
-        text += f"🚫 Banlı: {banned}\n"
-        text += f"❄️ Dondurulan: {frozen}\n"
-        text += f"⚠️ Bekleyen İhbar: {pending}"
-        await q.message.edit_text(text, reply_markup=admin_panel_menu())
+        query.edit_message_text(
+            f"📊 **İstatistikler**\n━━━━━━━━━━━━━━━━━━━━━━\n\n👥 Kullanıcı: {total_users}\n🔍 Sorgu: {total_queries}\n📡 API: {api_calls}\n🚫 Banlı: {banned}\n❄️ Dondurulan: {frozen}",
+            reply_markup=admin_panel_menu()
+        )
         return
     
     if data == "admin_logs":
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT user_id, query_type, query_value, query_time, result_count FROM query_logs ORDER BY id DESC LIMIT 10")
+        c.execute("SELECT user_id, query_type, query_value, query_time FROM query_logs ORDER BY id DESC LIMIT 10")
         logs = c.fetchall()
         conn.close()
-        
         text = "📋 **Son 10 Sorgu**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
         for log in logs:
-            text += f"👤 `{log[0]}` | {log[1]}\n🔍 `{log[2][:20]}` | 📊 {log[4]}\n⏰ {log[3][:16]}\n━━━━━━━━━━━━━━━━━━━━━━\n"
-        await q.message.edit_text(text[:4000], parse_mode=ParseMode.MARKDOWN, reply_markup=admin_panel_menu())
+            text += f"👤 `{log[0]}` | {log[1]}\n🔍 `{log[2][:20]}`\n⏰ {log[3][:16]}\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        query.edit_message_text(text[:4000], parse_mode="Markdown", reply_markup=admin_panel_menu())
+        return
+    
+    if data == "admin_duyuru":
+        context.user_data["await_announcement"] = True
+        query.edit_message_text("📢 Duyuru metnini yazın:")
         return
     
     if data == "admin_ban_menu":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🚫 Banla", callback_data="ban_user"),
              InlineKeyboardButton("✅ Ban Kaldır", callback_data="unban_user")],
-            [InlineKeyboardButton("📋 Banlı Liste", callback_data="banned_list")],
             [InlineKeyboardButton("🔙 Geri", callback_data="admin_panel")]
         ])
-        await q.message.edit_text("🚫 **Ban Yönetimi**", reply_markup=kb)
+        query.edit_message_text("🚫 Ban Yönetimi", reply_markup=kb)
         return
     
     if data == "admin_freeze_menu":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("❄️ Dondur", callback_data="freeze_user"),
              InlineKeyboardButton("🔥 Dondurmayı Kaldır", callback_data="unfreeze_user")],
-            [InlineKeyboardButton("📋 Dondurulan Liste", callback_data="frozen_list")],
             [InlineKeyboardButton("🔙 Geri", callback_data="admin_panel")]
         ])
-        await q.message.edit_text("❄️ **Dondurma Yönetimi**", reply_markup=kb)
+        query.edit_message_text("❄️ Dondurma Yönetimi", reply_markup=kb)
         return
     
     if data == "admin_manage":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("👑 Admin Ekle", callback_data="add_admin"),
              InlineKeyboardButton("👑 Admin Çıkar", callback_data="remove_admin")],
-            [InlineKeyboardButton("📋 Admin Liste", callback_data="admin_list")],
             [InlineKeyboardButton("🔙 Geri", callback_data="admin_panel")]
         ])
-        await q.message.edit_text("👑 **Admin Yönetimi**", reply_markup=kb)
+        query.edit_message_text("👑 Admin Yönetimi", reply_markup=kb)
         return
     
     if data == "admin_reports":
-        reports = get_reports("beklemede")
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT id, user_id, platform, content FROM reports WHERE status = 'beklemede' ORDER BY id DESC LIMIT 10")
+        reports = c.fetchall()
+        conn.close()
         if reports:
             text = "⚠️ **Bekleyen İhbarlar**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            for r in reports[:10]:
+            for r in reports:
                 text += f"🆔 `{r[0]}` | 👤 `{r[1]}` | 📱 {r[2]}\n📝 {r[3][:40]}...\n━━━━━━━━━━━━━━━━━━━━━━\n"
         else:
             text = "⚠️ Bekleyen ihbar yok."
-        
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Çözüldü İşaretle", callback_data="resolve_report")],
-            [InlineKeyboardButton("🔙 Geri", callback_data="admin_panel")]
-        ])
-        await q.message.edit_text(text[:4000], reply_markup=kb)
+        query.edit_message_text(text[:4000], parse_mode="Markdown", reply_markup=admin_panel_menu())
         return
     
     if data == "admin_maintenance":
-        current = get_maintenance()
-        set_maintenance(not current)
-        await q.message.edit_text(f"🔧 Bakım modu: {'AÇIK' if not current else 'KAPALI'}", reply_markup=admin_panel_menu())
-        return
-    
-    if data == "admin_users":
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT user_id, total_queries FROM users ORDER BY total_queries DESC LIMIT 20")
-        users = c.fetchall()
+        c.execute("SELECT value FROM settings WHERE key = 'maintenance'")
+        current = c.fetchone()
+        new_value = 'false' if current and current[0] == 'true' else 'true'
+        c.execute("UPDATE settings SET value = ? WHERE key = 'maintenance'", (new_value,))
+        conn.commit()
         conn.close()
-        
-        text = "👥 **En Aktif 20 Kullanıcı**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        for u in users:
-            text += f"👤 `{u[0]}` | 🔍 {u[1]} sorgu\n"
-        await q.message.edit_text(text[:4000], parse_mode=ParseMode.MARKDOWN, reply_markup=admin_panel_menu())
-        return
-    
-    if data == "banned_list":
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users WHERE is_banned = 1")
-        banned = c.fetchall()
-        conn.close()
-        text = "🚫 **Banlılar**\n\n" + "\n".join([f"• `{b[0]}`" for b in banned]) if banned else "Banlı yok"
-        await q.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=admin_panel_menu())
-        return
-    
-    if data == "frozen_list":
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users WHERE frozen = 1")
-        frozen = c.fetchall()
-        conn.close()
-        text = "❄️ **Dondurulanlar**\n\n" + "\n".join([f"• `{f[0]}`" for f in frozen]) if frozen else "Dondurulan yok"
-        await q.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=admin_panel_menu())
-        return
-    
-    if data == "admin_list":
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users WHERE is_admin = 1")
-        admins = c.fetchall()
-        conn.close()
-        text = "👑 **Adminler**\n\n" + "\n".join([f"• `{a[0]}`" for a in admins])
-        await q.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=admin_panel_menu())
-        return
-    
-    if data == "resolve_report":
-        context.user_data["await_resolve"] = True
-        await q.message.edit_text("✅ **İhbar ID'sini girin:**")
+        query.edit_message_text(f"🔧 Bakım modu: {'AÇIK' if new_value == 'true' else 'KAPALI'}", reply_markup=admin_panel_menu())
         return
     
     if data in ["ban_user", "unban_user", "freeze_user", "unfreeze_user", "add_admin", "remove_admin"]:
         context.user_data["admin_action"] = data
-        await q.message.edit_text(f"📝 **Kullanıcı ID'sini girin:**")
+        query.edit_message_text("📝 Kullanıcı ID'sini girin:")
 
-# ==================== MESAJ HANDLER ====================
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def message_handler(update, context):
     user_id = update.effective_user.id
-    text = update.message.text.strip() if update.message.text else None
-    
-    if get_maintenance() and not is_admin(user_id):
-        return await update.message.reply_text("🔧 Bakım modu!")
-    
-    if is_frozen(user_id) and not is_admin(user_id):
-        return await update.message.reply_text("❄️ Hesabınız donduruldu!")
+    text = update.message.text.strip()
     
     if text and text.lower() == "/cancel":
         context.user_data.clear()
-        await update.message.reply_text("✅ İptal edildi.", reply_markup=main_menu(is_admin(user_id)))
+        update.message.reply_text("✅ İptal edildi.", reply_markup=main_menu(is_admin(user_id)))
         return
     
+    # Admin işlemleri
     if context.user_data.get("admin_action") and is_admin(user_id):
         action = context.user_data["admin_action"]
         try:
             target_id = int(text)
             if action == "ban_user":
                 ban_user(target_id)
-                await update.message.reply_text(f"✅ Kullanıcı `{target_id}` banlandı!")
+                update.message.reply_text(f"✅ Kullanıcı `{target_id}` banlandı!")
             elif action == "unban_user":
                 unban_user(target_id)
-                await update.message.reply_text(f"✅ Kullanıcı `{target_id}` banı kaldırıldı!")
+                update.message.reply_text(f"✅ Kullanıcı `{target_id}` banı kaldırıldı!")
             elif action == "freeze_user":
                 freeze_user(target_id)
-                await update.message.reply_text(f"❄️ Kullanıcı `{target_id}` donduruldu!")
+                update.message.reply_text(f"❄️ Kullanıcı `{target_id}` donduruldu!")
             elif action == "unfreeze_user":
                 unfreeze_user(target_id)
-                await update.message.reply_text(f"🔥 Kullanıcı `{target_id}` dondurması kaldırıldı!")
+                update.message.reply_text(f"🔥 Kullanıcı `{target_id}` dondurması kaldırıldı!")
             elif action == "add_admin":
                 add_admin(target_id)
-                await update.message.reply_text(f"✅ Kullanıcı `{target_id}` admin yapıldı!")
+                update.message.reply_text(f"✅ Kullanıcı `{target_id}` admin yapıldı!")
             elif action == "remove_admin":
                 remove_admin(target_id)
-                await update.message.reply_text(f"✅ Kullanıcı `{target_id}` adminliği kaldırıldı!")
-        except ValueError:
-            await update.message.reply_text("❌ Geçersiz ID!")
+                update.message.reply_text(f"✅ Kullanıcı `{target_id}` adminliği kaldırıldı!")
+        except:
+            update.message.reply_text("❌ Geçersiz ID!")
         context.user_data.pop("admin_action", None)
         return
     
-    if context.user_data.get("await_resolve") and is_admin(user_id):
-        try:
-            report_id = int(text)
-            update_report_status(report_id, 'çözüldü')
-            await update.message.reply_text(f"✅ İhbar `{report_id}` çözüldü!")
-        except:
-            await update.message.reply_text("❌ Geçersiz ID!")
-        context.user_data.pop("await_resolve", None)
-        return
-    
+    # Duyuru
     if context.user_data.get("await_announcement") and is_admin(user_id):
         users = get_all_users()
         success, fail = 0, 0
         for uid in users:
             try:
-                await update.message.bot.send_message(uid, f"📢 **DUYURU**\n\n{text}\n\n👑 @rinexdestek", parse_mode=ParseMode.MARKDOWN)
+                bot.send_message(uid, f"📢 **DUYURU**\n\n{text}\n\n👑 @rinexdestek", parse_mode="Markdown")
                 success += 1
             except:
                 fail += 1
-            await asyncio.sleep(0.05)
-        await update.message.reply_text(f"✅ Duyuru gönderildi!\n✅ Başarılı: {success}\n❌ Başarısız: {fail}")
+        update.message.reply_text(f"✅ Duyuru gönderildi!\n✅ Başarılı: {success}\n❌ Başarısız: {fail}")
         context.user_data.pop("await_announcement", None)
         return
     
+    # Klonlama
     if context.user_data.get("await_clone"):
         token = text.strip()
         if token and ":" in token and len(token) > 30:
             try:
                 test_bot = Bot(token=token)
-                me = await test_bot.get_me()
-                await update.message.reply_text(
-                    f"✅ **Bot klonlandı!**\n\n🤖 @{me.username}\n\n"
-                    f"🔗 **Klon Bot:** https://t.me/{me.username}",
-                    reply_markup=main_menu(is_admin(user_id))
-                )
+                me = test_bot.get_me()
+                update.message.reply_text(f"✅ **Bot klonlandı!**\n\n🤖 @{me.username}\n\n🔗 https://t.me/{me.username}")
             except Exception as e:
-                await update.message.reply_text(f"❌ Klonlama başarısız!\nHata: {str(e)[:100]}")
+                update.message.reply_text(f"❌ Klonlama başarısız!\nHata: {str(e)[:100]}")
         else:
-            await update.message.reply_text("❌ Geçersiz token formatı!")
+            update.message.reply_text("❌ Geçersiz token formatı!")
         context.user_data.pop("await_clone", None)
         return
     
+    # İhbar
     if context.user_data.get("await_report"):
         platform = context.user_data.get("report_platform", "bilinmeyen")
-        content = text if text else "İçerik yok"
-        report_id = add_report(user_id, platform, content)
-        await update.message.reply_text(f"✅ İhbarınız alındı!\n🆔 ID: `{report_id}`", parse_mode=ParseMode.MARKDOWN)
-        
-        for admin_id in ADMIN_IDS:
-            try:
-                await update.message.bot.send_message(admin_id, f"⚠️ Yeni İhbar!\nID: {report_id}\nKullanıcı: {user_id}\nPlatform: {platform}")
-            except:
-                pass
-        
+        report_id = add_report(user_id, platform, text)
+        update.message.reply_text(f"✅ İhbarınız alındı!\n🆔 ID: `{report_id}`", parse_mode="Markdown")
         context.user_data.pop("await_report", None)
         context.user_data.pop("report_platform", None)
         return
     
+    # Sorgu
     if context.user_data.get("await_query"):
         query_type = context.user_data.get("query_type")
         if query_type and text:
-            loading = await update.message.reply_text("🔄 **Sorgulanıyor...**")
-            result, count, success = await execute_query(query_type, text)
-            await loading.delete()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result, count, success = loop.run_until_complete(execute_query(query_type, text))
+            loop.close()
             
             if success:
                 log_query(user_id, query_type, text, count)
-                await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN, reply_markup=result_menu())
+                update.message.reply_text(result, parse_mode="Markdown", reply_markup=result_menu())
             else:
-                await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN, reply_markup=result_menu())
+                update.message.reply_text(result, parse_mode="Markdown", reply_markup=result_menu())
         context.user_data.pop("await_query", None)
         context.user_data.pop("query_type", None)
         return
     
-    await update.message.reply_text("❓ Geçersiz komut! /start", reply_markup=main_menu(is_admin(user_id)))
+    update.message.reply_text("❓ Geçersiz komut! /start", reply_markup=main_menu(is_admin(user_id)))
+
+# ==================== HANDLER KAYITLARI ====================
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(CallbackQueryHandler(callback_handler))
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, message_handler))
+
+# ==================== WEBHOOK ====================
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        dispatcher.process_update(update)
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Webhook hatası: {e}")
+        return jsonify({"ok": False}), 500
+
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({"status": "Bot is running!", "version": "9.0"})
+
+def set_webhook():
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+    if not render_url:
+        print("❌ RENDER_EXTERNAL_URL bulunamadı!")
+        return False
+    
+    webhook_url = f"{render_url}/{TOKEN}"
+    result = bot.set_webhook(webhook_url)
+    if result:
+        print(f"✅ Webhook ayarlandı: {webhook_url}")
+        return True
+    else:
+        print("❌ Webhook ayarlanamadı!")
+        return False
 
 # ==================== ANA FONKSİYON ====================
-def main():
+if __name__ == "__main__":
     print("╔══════════════════════════════════════════════════════════════╗")
-    print("║          CK SORGUBOT ULTIMATE PRO v8.0 - DOCKER              ║")
+    print("║          CK SORGUBOT ULTIMATE PRO v9.0 - WEBHOOK             ║")
     print("║              @rinexdestek | @cksorgupanel                    ║")
     print("╚══════════════════════════════════════════════════════════════╝")
     
     init_db()
     
-    app = Application.builder().token(TOKEN).build()
+    port = int(os.environ.get("PORT", 8080))
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Webhook ayarla
+    set_webhook()
     
-    print(f"\n🔥 Bot Başlatıldı!")
+    print(f"\n🔥 Bot Başlatıldı! (Webhook Mode)")
     print(f"👑 Adminler: {ADMIN_IDS}")
-    print(f"📢 Zorunlu Kanal: {REQUIRED_CHANNEL}")
     print(f"🔢 Toplam Sorgu Tipi: {len(API_URLS)}")
     print(f"🎁 Tüm sorgular ÜCRETSİZ!")
-    print(f"\n✅ Bot çalışıyor...\n")
+    print(f"\n✅ Bot çalışıyor... Port: {port}\n")
     
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=port)
