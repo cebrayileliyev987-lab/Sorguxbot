@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ck-sorgubot
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        value: "8254362814:AAHJQsf2eFTx8FsKqc8aL_Y9sIv9snnPDGM"
+      - key: ADMIN_IDS
+        value: "8610336203"
+      - key: REQUIRED_CHANNEL
+        value: "@iosstarturkiyee"
