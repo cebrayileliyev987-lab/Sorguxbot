@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: ck-sorgubot
+    runtime: python
+    repo: https://github.com/SENIN_USERNAME/REPO_ADI  # Kendi repo adresinle değiştir
+    plan: free
+    region: frankfurt  # veya singapore, ohio, virginia
+    branch: main
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false  # Render dashboard'dan manuel gireceksin
+        description: "BotFather'dan aldığın bot tokeni"
+      - key: ADMIN_IDS
+        value: "8610336203"
+        description: "Admin kullanıcı ID'leri (virgülle ayır)"
+      - key: REQUIRED_CHANNEL
+        value: "@iosstarturkiyee"
+        description: "Zorunlu üyelik kanalı"
+      - key: PYTHON_VERSION
+        value: "3.11.8"
+      - key: TZ
+        value: "Europe/Istanbul"
+    
+  # Health check için (opsiyonel)
+  - type: cron
+    name: bot-health-check
+    runtime: python
+    schedule: "*/5 * * * *"  # Her 5 dakikada bir
+    buildCommand: |
+      pip install requests
+    startCommand: python health_check.py
+    envVars:
+      - key: BOT_URL
+        value: "https://ck-sorgubot.onrender.com"  # Deploy sonrası URL'in
+    repo: https://github.com/SENIN_USERNAME/REPO_ADI
+    branch: main
