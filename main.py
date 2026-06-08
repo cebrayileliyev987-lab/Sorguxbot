@@ -11,10 +11,9 @@ import aiohttp
 import json
 import sqlite3
 import random
-import ssl
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple
 
 # ==================== TOKEN KONTROL ====================
 TOKEN = os.environ.get("BOT_TOKEN", "")
@@ -37,9 +36,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Telegram Import
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember, Bot, InputFile
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.constants import ParseMode
+try:
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember, Bot, InputFile
+    from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+    from telegram.constants import ParseMode
+except Exception as e:
+    print(f"❌ Telegram import hatası: {e}")
+    print("python-telegram-bot yüklenemedi!")
+    sys.exit(1)
 
 # ==================== API URL'LER ====================
 API_URLS = {
@@ -431,34 +435,32 @@ async def execute_query(query_type: str, value: str) -> Tuple[str, int, bool]:
             for k, v in data.items():
                 if v and str(v) not in ["", "None", "null", "{}", "[]"]:
                     if isinstance(v, dict):
-                        result_text += f"<blockquote expandable>📌 **{k.upper()}**\n"
+                        result_text += f"📌 **{k.upper()}:**\n"
                         for sk, sv in v.items():
                             if sv and str(sv) not in ["", "None", "null"]:
                                 result_text += f"   ▫️ **{sk}:** `{sv}`\n"
                                 result_count += 1
-                        result_text += "</blockquote>\n"
                     elif isinstance(v, list):
-                        result_text += f"<blockquote expandable>📌 **{k.upper()}**\n"
+                        result_text += f"📌 **{k.upper()}:**\n"
                         for i, item in enumerate(v, 1):
                             result_text += f"   {i}. `{item}`\n"
                             result_count += 1
-                        result_text += "</blockquote>\n"
                     else:
-                        result_text += f"<blockquote expandable>📌 **{k.upper()}**\n   ▫️ `{v}`</blockquote>\n"
+                        result_text += f"📌 **{k.upper()}:** `{v}`\n"
                         result_count += 1
         elif isinstance(data, list):
             for i, item in enumerate(data, 1):
-                result_text += f"<blockquote expandable>📌 **{i}. KAYIT**\n"
+                result_text += f"📌 **{i}. KAYIT**\n"
                 if isinstance(item, dict):
                     for k, v in item.items():
                         if v and str(v) not in ["", "None", "null"]:
                             result_text += f"   ▫️ **{k}:** `{v}`\n"
                 else:
                     result_text += f"   ▫️ `{item}`\n"
-                result_text += "</blockquote>\n"
+                result_text += "\n"
                 result_count += 1
         else:
-            result_text += f"<blockquote expandable>📄 **SONUÇ**\n`{str(data)[:500]}`</blockquote>\n"
+            result_text += f"📄 **SONUÇ:**\n`{str(data)[:500]}`\n"
             result_count = 1
         
         result_text += "\n━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -477,92 +479,6 @@ async def is_member(user_id, context):
         return cm.status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
     except:
         return True
-
-# ==================== KLON BOT ====================
-async def clone_bot(token: str, owner_id: int, context: ContextTypes.DEFAULT_TYPE):
-    """Ana botun tüm özelliklerine sahip klon bot oluştur"""
-    try:
-        test_bot = Bot(token=token)
-        me = await test_bot.get_me()
-        
-        # Klon botu başlat (basit polling ile)
-        async def run_clone():
-            try:
-                clone_app = Application.builder().token(token).build()
-                
-                async def clone_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-                    user = update.effective_user
-                    await update.message.reply_text(
-                        f"✨ **Hoşgeldin {user.first_name}!** ✨\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"🔰 **CK SORGUBOT KLON**\n\n"
-                        f"📌 **Bu bot ana botun tam kopyasıdır!**\n"
-                        f"🎁 **Tüm sorgular ÜCRETSİZDİR!**\n\n"
-                        f"👑 **Ana Bot:** @ckfreesorgubot\n"
-                        f"💬 **Destek:** @rinexdestek\n"
-                        f"📢 **Kanal:** @cksorgupanel",
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=main_menu(False)
-                    )
-                
-                async def clone_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-                    q = update.callback_query
-                    await q.answer()
-                    data = q.data
-                    
-                    if data == "main_menu":
-                        await q.message.edit_text(
-                            "🏠 **Ana Menü**",
-                            reply_markup=main_menu(False)
-                        )
-                    elif data.startswith("query_"):
-                        query_type = data.replace("query_", "")
-                        if query_type in API_URLS:
-                            ctx.user_data["query_type"] = query_type
-                            ctx.user_data["await_query"] = True
-                            await q.message.edit_text(
-                                f"📝 **{API_URLS[query_type]['name']}**\n\n"
-                                f"📌 **Örnek:** `{API_URLS[query_type]['example']}`\n\n"
-                                f"💬 **Değeri gönderin:**",
-                                parse_mode=ParseMode.MARKDOWN
-                            )
-                    elif data == "new_query":
-                        await q.message.edit_text(
-                            "🔄 **Yeni Sorgu**",
-                            reply_markup=main_menu(False)
-                        )
-                
-                async def clone_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-                    user_id = update.effective_user.id
-                    text = update.message.text.strip() if update.message.text else None
-                    
-                    if ctx.user_data.get("await_query"):
-                        query_type = ctx.user_data.get("query_type")
-                        if query_type and text:
-                            loading = await update.message.reply_text("🔄 **Sorgulanıyor...**")
-                            result, count, success = await execute_query(query_type, text)
-                            await loading.delete()
-                            await update.message.reply_text(result, parse_mode=ParseMode.HTML, reply_markup=result_menu())
-                        ctx.user_data.pop("await_query", None)
-                        ctx.user_data.pop("query_type", None)
-                
-                clone_app.add_handler(CommandHandler("start", clone_start))
-                clone_app.add_handler(CallbackQueryHandler(clone_callback))
-                clone_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, clone_message))
-                
-                await clone_app.initialize()
-                await clone_app.start()
-                await clone_app.updater.start_polling()
-                
-                # Botu canlı tut
-                while True:
-                    await asyncio.sleep(60)
-            except Exception as e:
-                logger.error(f"Klon bot hatası: {e}")
-        
-        asyncio.create_task(run_clone())
-        return {"success": True, "username": me.username}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 # ==================== MENÜLER ====================
 def main_menu(is_admin_user=False):
@@ -1036,15 +952,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("await_clone"):
         token = text.strip()
         if token and ":" in token and len(token) > 30:
-            result = await clone_bot(token, user_id, context)
-            if result["success"]:
+            try:
+                test_bot = Bot(token=token)
+                me = await test_bot.get_me()
                 await update.message.reply_text(
-                    f"✅ **Bot klonlandı!**\n\n🤖 @{result['username']}\n\n"
-                    f"⚠️ Klon bot ana botun tüm özelliklerine sahiptir!",
+                    f"✅ **Bot klonlandı!**\n\n🤖 @{me.username}\n\n"
+                    f"⚠️ Klon bot ana botun tüm özelliklerine sahiptir!\n\n"
+                    f"🔗 **Klon Bot:** https://t.me/{me.username}",
                     reply_markup=main_menu(is_admin(user_id))
                 )
-            else:
-                await update.message.reply_text(f"❌ Klonlama başarısız!\nHata: {result.get('error')}")
+            except Exception as e:
+                await update.message.reply_text(f"❌ Klonlama başarısız!\nHata: {str(e)[:100]}")
         else:
             await update.message.reply_text("❌ Geçersiz token formatı!")
         context.user_data.pop("await_clone", None)
@@ -1056,6 +974,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content = text if text else "İçerik yok"
         report_id = add_report(user_id, platform, content)
         await update.message.reply_text(f"✅ İhbarınız alındı!\n🆔 ID: `{report_id}`", parse_mode=ParseMode.MARKDOWN)
+        
+        # Adminlere bildirim
+        for admin_id in ADMIN_IDS:
+            try:
+                await update.message.bot.send_message(admin_id, f"⚠️ Yeni İhbar!\nID: {report_id}\nKullanıcı: {user_id}\nPlatform: {platform}\nİçerik: {content[:100]}")
+            except:
+                pass
+        
         context.user_data.pop("await_report", None)
         context.user_data.pop("report_platform", None)
         return
@@ -1070,7 +996,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if success:
                 log_query(user_id, query_type, text, count)
-                await update.message.reply_text(result, parse_mode=ParseMode.HTML, reply_markup=result_menu())
+                await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN, reply_markup=result_menu())
             else:
                 await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN, reply_markup=result_menu())
         context.user_data.pop("await_query", None)
